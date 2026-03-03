@@ -1705,12 +1705,37 @@ struct npc_ulduar_aerial_command_unit : public ScriptedAI
             case EVENT_MAGNETIC_CORE_PULL_DOWN:
                 me->CastSpell(me, SPELL_MAGNETIC_CORE, true);
                 me->CastSpell(me, SPELL_SPINNING, true);
-                me->GetMotionMaster()->MovePoint(0, me->GetPositionX(), me->GetPositionY(), 365.34f, FORCED_MOVEMENT_NONE, me->GetExactDist(me->GetPositionX(), me->GetPositionY(), 365.34f));
+                // normally the aerial unit is flying (gravity disabled), so MovePoint alone
+                // won't change its Z.  Teleport it in case the motion generator ignores the
+                // height change and temporarily re-enable gravity so the server recalculates
+                // position correctly.
+                // temporarily drop the unit – disable flying/gravity so that
+                // even if motion generators ignore a Z change the client
+                // will see the pull-down.
+                me->SetDisableGravity(false);
+                me->SetCanFly(false);
+                me->RemoveUnitMovementFlag(MOVEMENTFLAG_FLYING);
+                me->NearTeleportTo(me->GetPositionX(), me->GetPositionY(), 365.34f, me->GetOrientation());
+                // keep the MovePoint for non‑flying cases (or future repurposing)
+                me->GetMotionMaster()->MovePoint(0, me->GetPositionX(), me->GetPositionY(), 365.34f,
+                    FORCED_MOVEMENT_NONE,
+                    me->GetExactDist(me->GetPositionX(), me->GetPositionY(), 365.34f));
                 events.ScheduleEvent(EVENT_MAGNETIC_CORE_FREE, 20s);
                 break;
             case EVENT_MAGNETIC_CORE_FREE:
+                // remove any lingering control effects from the pull
                 me->RemoveAura(SPELL_SPINNING);
-                me->GetMotionMaster()->MovePoint(0, me->GetPositionX(), me->GetPositionY(), 381.34f, FORCED_MOVEMENT_NONE, me->GetDistance(me->GetPositionX(), me->GetPositionY(), 381.34f));
+                me->RemoveAura(SPELL_MAGNETIC_CORE);
+                // restore flying height and revert movement flags
+                me->NearTeleportTo(me->GetPositionX(), me->GetPositionY(), 381.34f, me->GetOrientation());
+                me->SetDisableGravity(true);
+                me->SetCanFly(true);
+                me->AddUnitMovementFlag(MOVEMENTFLAG_FLYING);
+                me->GetMotionMaster()->MovePoint(0, me->GetPositionX(), me->GetPositionY(), 381.34f,
+                    FORCED_MOVEMENT_NONE,
+                    me->GetDistance(me->GetPositionX(), me->GetPositionY(), 381.34f));
+                // make sure unit stays engaged with nearby players
+                DoZoneInCombat();
                 events.ScheduleEvent(EVENT_MAGNETIC_CORE_REMOVE_IMMOBILIZE, 1s);
                 break;
             case EVENT_MAGNETIC_CORE_REMOVE_IMMOBILIZE:
